@@ -1,0 +1,120 @@
+/* shoo: a clearing in the pixel forest, with a pane of glass in the middle.
+   Day in light mode, night in dark mode. */
+:root {
+  color-scheme: light dark;
+  --ink: #1f1a16;
+  --muted: #6f655c;
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-line: rgba(60, 40, 20, 0.12);
+  --field: rgba(255, 255, 255, 0.7);
+  --spine: #6b4630;      /* Bramble's spikes */
+  --cream: #f2dcb8;      /* Bramble's face */
+  --moss: #3d8a52;       /* websites */
+  --berry: #c2413b;      /* YouTube */
+  --slate: #5b6b82;      /* login */
+  --on: #2f8f55;
+  --off: #9a8f86;
+  --bad-bg: rgba(194, 65, 59, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f3ece4;
+    --muted: #b3a89c;
+    --glass: rgba(18, 18, 24, 0.5);
+    --glass-edge: rgba(255, 255, 255, 0.16);
+    --glass-line: rgba(255, 255, 255, 0.1);
+    --field: rgba(0, 0, 0, 0.32);
+    --spine: #d9a877;
+    --moss: #7fd09a;
+    --berry: #ff8a80;
+    --slate: #9fb1cc;
+    --on: #7fd8a0;
+    --off: #8d8379;
+    --bad-bg: rgba(255, 138, 128, 0.14);
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: #fff; color: var(--ink);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  display: grid; place-items: start center; overflow-x: hidden;
+}
+@media (prefers-color-scheme: dark) { body { background: #000; } }
+
+#forest { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; image-rendering: pixelated; }
+
+/* the glass */
+.glass {
+  position: relative; z-index: 1; width: min(560px, calc(100% - 32px)); margin: 9vh 0 40px;
+  padding: 26px 28px 20px; border-radius: 26px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 rgba(0, 0, 0, 0.04), 0 30px 60px -30px rgba(40, 25, 10, 0.35);
+}
+
+.top { display: flex; align-items: center; gap: 12px; }
+#bramble { width: 48px; height: 36px; image-rendering: pixelated; }
+h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.03em; color: var(--spine); flex: 1; }
+
+.state {
+  display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 7px 14px 7px 11px;
+  border: 1px solid var(--glass-line); background: var(--field); color: var(--ink); font: 600 14px/1 inherit; cursor: pointer;
+}
+.state .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--off); }
+.state[aria-pressed="true"] .dot { background: var(--on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--on) 25%, transparent); }
+.state:hover { border-color: color-mix(in srgb, var(--ink) 25%, transparent); }
+
+.today { font-size: 19px; line-height: 1.4; margin: 16px 0 18px; letter-spacing: -0.01em; text-wrap: pretty; }
+.today b { font-variant-numeric: tabular-nums; }
+.today .yt { color: var(--berry); }
+.today .web { color: var(--moss); }
+
+.note { display: flex; gap: 10px; align-items: center; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--field); font-size: 14px; }
+.note.bad { background: var(--bad-bg); color: var(--ink); display: block; }
+.spinner { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--glass-line); border-top-color: var(--spine); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.parts { border-top: 1px solid var(--glass-line); }
+.part { display: grid; grid-template-columns: 10px 1fr auto auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--glass-line); }
+.part b { display: block; font-weight: 600; }
+.part small { display: block; color: var(--muted); font-size: 13px; }
+.mark { width: 10px; height: 10px; border-radius: 3px; }
+.web .mark { background: var(--moss); }
+.yt .mark { background: var(--berry); }
+.login .mark { background: var(--slate); }
+.val { font-weight: 600; font-size: 14px; color: var(--muted); }
+.val.yes { color: var(--on); }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+.allow button[type="submit"], .small {
+  border: 1px solid var(--glass-line); background: var(--field); border-radius: 10px; padding: 8px 13px; font-weight: 600; font-size: 14px;
+}
+.small { padding: 4px 10px; font-size: 13px; }
+.allow button[type="submit"]:hover, .small:hover { border-color: color-mix(in srgb, var(--ink) 25%, transparent); }
+
+.allow { margin-top: 16px; }
+.allow label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 7px; }
+.row { display: flex; gap: 8px; }
+input {
+  flex: 1; min-width: 0; font: inherit; color: inherit; border: 1px solid var(--glass-line); background: var(--field);
+  border-radius: 10px; padding: 8px 11px;
+}
+input:focus-visible, button:focus-visible { outline: 2px solid var(--spine); outline-offset: 2px; }
+#allowed { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+#allowed li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 11px; border-radius: 999px; background: var(--field); border: 1px solid var(--glass-line); font-size: 13px; }
+#allowed button { border: 0; background: none; color: var(--muted); padding: 2px 6px; border-radius: 999px; }
+#allowed button:hover { color: var(--ink); background: var(--glass-line); }
+
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 18px; color: var(--muted); font-size: 13px; }
+.link { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.link:hover { color: var(--ink); }
+
+button:disabled { opacity: 0.5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+@media (max-width: 520px) { .glass { padding: 20px 18px 16px; margin-top: 4vh; } .part { grid-template-columns: 10px 1fr auto; } .part .small { grid-column: 2; justify-self: start; } }

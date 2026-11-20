@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>shoo</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="shoo.css">
+</head>
+<body>
+<canvas id="forest" aria-hidden="true"></canvas>
+
+<main class="glass" id="panel" aria-live="polite">
+  <header class="top">
+    <canvas id="bramble" width="12" height="9" aria-hidden="true"></canvas>
+    <h1>shoo</h1>
+    <button type="button" class="state" id="power" aria-pressed="false"><span class="dot"></span><span id="powerText">…</span></button>
+  </header>
+
+  <p class="today" id="today">Looking…</p>
+
+  <div class="note" id="busy" hidden><span class="spinner" aria-hidden="true"></span><span>Waiting for an administrator to type their password in the macOS box…</span></div>
+  <p class="note bad" id="error" role="alert" hidden></p>
+
+  <section class="parts" aria-label="What shoo blocks">
+    <div class="part web">
+      <span class="mark" aria-hidden="true"></span>
+      <div><b>Websites and apps</b><small>Ads, Google's full-page ads, pop-ups, trackers</small></div>
+      <span class="val" id="webVal">–</span>
+    </div>
+    <div class="part yt">
+      <span class="mark" aria-hidden="true"></span>
+      <div><b>YouTube</b><small id="ytWhy">Video ads, and the ads in the feed, search and Shorts</small></div>
+      <button type="button" class="small" id="ytBtn" hidden></button>
+      <span class="val" id="ytVal">–</span>
+    </div>
+    <div class="part login">
+      <span class="mark" aria-hidden="true"></span>
+      <div><b>Starts when you log in</b><small>A small helper in the background</small></div>
+      <span class="val" id="loginVal">–</span>
+    </div>
+  </section>
+
+  <section class="allow">
+    <form id="allowForm" autocomplete="off">
+      <label for="site">Is a site not working? Let it through:</label>
+      <div class="row">
+        <input id="site" name="site" placeholder="example.com" spellcheck="false" inputmode="url">
+        <button type="submit">Let it through</button>
+      </div>
+    </form>
+    <ul id="allowed"></ul>
+  </section>
+
+  <footer class="foot">
+    <span id="listInfo"></span>
+    <button type="button" class="link" id="listBtn">Get the newest list</button>
+  </footer>
+</main>
+
+<script id="config" type="application/json">__CONFIG__</script>
+<script src="sprites.js"></script>
+<script src="forest.js"></script>
+<script src="shoo.js"></script>
+</body>
+</html>

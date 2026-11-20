@@ -1,0 +1,18 @@
+{
+  "name": "shoo",
+  "version": "1.0.0",
+  "description": "Blocks ads on your whole Mac: Google's full-page ads, banners, pop-ups, trackers, and the ads on YouTube. Bramble the hedgehog keeps them out.",
+  "bin": { "shoo": "bin/shoo.js" },
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=18" },
+  "repository": "github:dpatel7-dev/shoo",
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "install.sh",
+    "install.ps1",
+    "README.md",
+    "CHANGELOG.md"
+  ]
+}
