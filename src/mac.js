@@ -96,6 +96,26 @@ function checkMac(ourPac) {
   return result;
 }
 
+// Browser settings a school or company can push. If any of these is set, the
+// browser's network settings are theirs, and shoo stays out of that browser.
+const PROXY_POLICIES = ['ProxyMode', 'ProxyServerMode', 'ProxyServer', 'ProxyPacUrl', 'ProxySettings', 'ProxyBypassList'];
+
+/** The names of the settings in a managed-preferences file (read only). */
+function policyKeys(file) {
+  if (!fs.existsSync(file)) return [];
+  const r = run('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file]);
+  if (r.ok) { try { return Object.keys(JSON.parse(r.out)); } catch { /* fall through */ } }
+  const t = run('/usr/bin/plutil', ['-p', file]).out;
+  return (t.match(/^\s*"([A-Za-z]+)"\s*=>/gm) || []).map((l) => l.replace(/^\s*"|"\s*=>$/g, ''));
+}
+
+/** Does the school (or whoever manages this Mac) control this browser's network settings? */
+function browserProxyPolicy(bundle) {
+  if (process.platform !== 'darwin' || !bundle) return false;
+  const files = [`/Library/Managed Preferences/${bundle}.plist`, `/Library/Managed Preferences/${os.userInfo().username}/${bundle}.plist`];
+  return files.some((f) => policyKeys(f).some((k) => PROXY_POLICIES.includes(k)));
+}
+
 /** Is shoo's certificate trusted by the Mac (in the admin trust settings)? */
 function isTrusted(caName) {
   if (!caName) return false;
@@ -314,6 +334,6 @@ function stopAgent() {
 }
 
 module.exports = {
-  checkMac, isTrusted, pacSet, adminScript, asAdmin, flushDns, trustWorks, trustAsUser, untrustAsUser, makeApp, removeApp, appsDir, infoPlist, dialog, startAgent, restartAgent, stopAgent, plist, plistPath,
+  checkMac, browserProxyPolicy, policyKeys, PROXY_POLICIES, isTrusted, pacSet, adminScript, asAdmin, flushDns, trustWorks, trustAsUser, untrustAsUser, makeApp, removeApp, appsDir, infoPlist, dialog, startAgent, restartAgent, stopAgent, plist, plistPath,
   parseServices, parseEnrollment, parseScutil, foreignProxy, parseOnOff, parseUrl, LABEL,
 };

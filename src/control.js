@@ -100,17 +100,18 @@ function blockedCount() {
 function status() {
   const state = load();
   const authority = fs.existsSync(file('youtube-only-ca.pem')) ? CA.loadAuthority(home()) : null;
-  const browsers = process.platform === 'darwin' ? Browsers.installed() : [];
+  const browsers = process.platform === 'darwin' ? usableBrowsers() : [];
   const chosen = Browsers.find(state.browser) || browsers[0] || null;
   return {
     version: VERSION,
     on: state.on,
     mode: state.mode,
+    managed: !!state.managed,
     blocked: state.mode === 'mac' ? blockedCount() : state.on ? state.listCount : 0,
     browser: chosen ? { id: chosen.id, name: chosen.short, state: process.platform === 'darwin' ? Browsers.state(chosen, browserPacUrl(state)) : 'off' } : null,
     browsers: browsers.map((b) => ({ id: b.id, name: b.short })),
     youtube: state.on && state.youtube,
-    youtubeWhy: state.note,
+    youtubeWhy: (state.youtubePaused && state.pauseWhy) || state.note,
     allow: state.allow,
     listUpdated: state.listUpdated,
     port: state.port,
@@ -129,15 +130,25 @@ function writeScript(text) {
 }
 
 /** Refuses on a managed Mac. Returns the checks for the caller to show. */
-function preflight(state) {
+/**
+ * Checks before turning on. On a Mac a school or company manages, shoo never
+ * changes the Mac's settings, so the whole-Mac way is refused; the browser way
+ * changes nothing on the Mac and leaves the school's filters in place.
+ */
+function preflight(state, mode = 'mac') {
   const checks = Mac.checkMac(pacUrl(state));
   if (!checks.mac) throw new Error('shoo works on macOS for now.');
-  if (checks.managed) {
-    const e = new Error(`This Mac is managed by an organization (like a school): ${checks.managedWhy}. shoo won't change its settings. Blocking ads on it is up to whoever manages it.`);
+  if (checks.managed && mode === 'mac') {
+    const e = new Error(`This Mac is managed by an organization (like a school): ${checks.managedWhy}. shoo won't change its settings, so blocking ads in every app stays off. shoo still blocks ads in Chrome without touching anything: type shoo on`);
     e.managed = true;
     throw e;
   }
   return checks;
+}
+
+/** The browsers shoo can use: installed, and not ones whose network settings the school controls. */
+function usableBrowsers() {
+  return Browsers.installed().filter((b) => !Mac.browserProxyPolicy(b.bundle));
 }
 
 /** Is the YouTube-only certificate trusted by macOS right now? */
@@ -152,7 +163,7 @@ function makeApps() {
   const node = process.execPath;
   const script = path.join(APP, 'bin', 'shoo.js');
   const made = [Mac.makeApp({ name: 'shoo', id: 'dev.dpatel7.shoo.app', args: ['app'], icon: path.join(APP, 'assets', 'shoo.icns'), node, script, version: VERSION })];
-  for (const b of Browsers.installed()) {
+  for (const b of usableBrowsers()) {
     made.push(Mac.makeApp({ name: `${b.short} with shoo`, id: `dev.dpatel7.shoo.${b.id}`, args: ['browser', b.id], icon: path.join(APP, 'assets', 'browser.icns'), node, script, version: VERSION }));
   }
   return made;
@@ -174,11 +185,17 @@ async function turnOn({ mode = 'browser', youtube = true, say = () => {} } = {})
 
 async function turnOnBrowser({ youtube = true, say = () => {} } = {}) {
   const state = load();
-  const checks = preflight(state);
+  const checks = preflight(state, 'browser');
   if (checks.proxy) {
     throw new Error(`This Mac sends web traffic through a filter or proxy (${checks.proxyWhere.join(', ')}), often set up by a school or a parent. Opening your browser through shoo would go around it, so shoo won't.`);
   }
   if (!Browsers.installed().length) throw new Error('shoo works with Google Chrome, Microsoft Edge or Brave, and none of them is in your Applications folder.');
+  const usable = usableBrowsers();
+  if (!usable.length) {
+    throw new Error(`Your school (or whoever manages this Mac) controls ${Browsers.installed().map((b) => b.short).join(' and ')}'s network settings, so shoo can't block ads in it without going around them. It won't.`);
+  }
+  state.managed = checks.managed;
+  if (checks.managed) say('This Mac is managed by a school or company. shoo won\'t touch any of its settings: it only works inside your browser, and the school\'s filters still apply.');
   state.note = '';
   say('Getting the list of ad and tracker addresses...');
   const list = await getList(!state.listUpdated || Date.now() - Date.parse(state.listUpdated) > 7 * 864e5);
@@ -205,7 +222,7 @@ async function turnOnBrowser({ youtube = true, say = () => {} } = {}) {
   state.youtube = youtubeOk;
   state.youtubePaused = false;
   state.listCount = domains.length;
-  if (!state.browser || !Browsers.find(state.browser)) state.browser = Browsers.installed()[0].id;
+  if (!state.browser || !usable.some((b) => b.id === state.browser)) state.browser = usable[0].id;
   if (list.fresh) state.listUpdated = new Date().toISOString();
   save(state);
   return { blocked: domains.length, youtube: youtubeOk, note: state.note, browser: Browsers.find(state.browser) };
@@ -214,7 +231,8 @@ async function turnOnBrowser({ youtube = true, say = () => {} } = {}) {
 /** Open the browser with shoo (restart: close and reopen it if it's open without shoo). */
 async function openBrowser({ id, restart = false, url = '', asApp = false } = {}) {
   const state = load();
-  const b = Browsers.find(id || state.browser) || Browsers.installed()[0];
+  const b = Browsers.find(id || state.browser) || usableBrowsers()[0];
+  if (b && Mac.browserProxyPolicy(b.bundle)) throw new Error(`Your school controls ${b.short}'s network settings, so shoo can't block ads in it.`);
   if (!b) throw new Error('shoo works with Google Chrome, Microsoft Edge or Brave, and none of them is installed.');
   if (id && state.browser !== b.id) { state.browser = b.id; save(state); }
   return { browser: b, result: await Browsers.open(b, browserPacUrl(state), { restart, url, asApp }) };
@@ -369,11 +387,12 @@ async function block(site) {
 }
 
 /** Turn just the YouTube part on or off (no password: the PAC file shoo serves changes). */
-function setYoutube(on) {
+function setYoutube(on, why = '') {
   const state = load();
   state.youtubePaused = !on;
+  state.pauseWhy = on ? '' : why;
   save(state);
   return state;
 }
 
-module.exports = { load, save, status, turnOn, turnOff, rewriteHosts, allow, block, setYoutube, countAds, stats, getList, openBrowser, makeApps, removeApps, forgetTrust, pacUrl, browserPacUrl, home, file, VERSION, APP };
+module.exports = { preflight, usableBrowsers, load, save, status, turnOn, turnOff, rewriteHosts, allow, block, setYoutube, countAds, stats, getList, openBrowser, makeApps, removeApps, forgetTrust, pacUrl, browserPacUrl, home, file, VERSION, APP };

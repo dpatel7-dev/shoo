@@ -10,9 +10,9 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const LIST = [
-  { id: 'chrome', name: 'Google Chrome', short: 'Chrome' },
-  { id: 'edge', name: 'Microsoft Edge', short: 'Edge' },
-  { id: 'brave', name: 'Brave Browser', short: 'Brave' },
+  { id: 'chrome', name: 'Google Chrome', short: 'Chrome', bundle: 'com.google.Chrome' },
+  { id: 'edge', name: 'Microsoft Edge', short: 'Edge', bundle: 'com.microsoft.Edge' },
+  { id: 'brave', name: 'Brave Browser', short: 'Brave', bundle: 'com.brave.Browser' },
 ];
 
 function appPath(b) {

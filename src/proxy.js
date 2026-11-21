@@ -175,7 +175,12 @@ class Proxy {
     // For the tests only: where to find "YouTube", and an extra authority to trust for it.
     this.upstreamMap = process.env.SHOO_UPSTREAM ? JSON.parse(process.env.SHOO_UPSTREAM) : null;
     const extraCa = process.env.SHOO_UPSTREAM_CA ? fs.readFileSync(process.env.SHOO_UPSTREAM_CA, 'utf8') : null;
-    this.agent = new https.Agent({ keepAlive: true, maxSockets: 32, ...(extraCa ? { ca: [...tls.rootCertificates, extraCa] } : {}) });
+    // Trust what the Mac trusts, too. Some schools check secure connections
+    // with their own certificate; then YouTube keeps going through their check.
+    let system = [];
+    try { if (typeof tls.getCACertificates === 'function') system = tls.getCACertificates('system'); } catch { /* older Node: the usual list */ }
+    this.agent = new https.Agent({ keepAlive: true, maxSockets: 32, ca: [...tls.rootCertificates, ...system, ...(extraCa ? [extraCa] : [])] });
+    this.onTrustProblem = () => {};
 
     this.server = http.createServer((req, res) => this.onRequest(req, res));
     this.server.on('connect', (req, socket, head) => this.onConnect(req, socket, head));
@@ -274,6 +279,7 @@ class Proxy {
     const to = this.target(host);
     const up = https.request({ host: to.host, port: to.port, servername: host, method: req.method, path: req.url, headers, agent: this.agent });
     up.on('error', (e) => {
+      if (/CERT|SELF_SIGNED|ISSUER|UNABLE_TO_VERIFY/i.test(String(e.code || e.message))) this.onTrustProblem(e);
       if (res.headersSent) return res.destroy();
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(`shoo couldn't reach YouTube: ${e.message}\nIf this keeps happening, turn off YouTube blocking in shoo.\n`);

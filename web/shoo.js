@@ -80,7 +80,7 @@
     // YouTube
     $('ytVal').textContent = !on ? 'Off' : !s.youtube ? 'Skipped' : s.youtubePaused ? 'Paused' : 'On';
     $('ytVal').className = 'val' + (yt ? ' yes' : '');
-    $('ytWhy').textContent = on && !s.youtube && s.youtubeWhy ? s.youtubeWhy : 'Video ads, and the ads in the feed, search and Shorts';
+    $('ytWhy').textContent = on && (!s.youtube || s.youtubePaused) && s.youtubeWhy ? s.youtubeWhy : 'Video ads, and the ads in the feed, search and Shorts';
     $('ytBtn').hidden = !(on && s.youtube);
     $('ytBtn').textContent = s.youtubePaused ? 'Resume' : 'Pause';
     // the browser
@@ -98,10 +98,11 @@
       $('browserVal').className = 'val' + (st === 'shoo' ? ' yes' : '');
     }
     // the whole Mac
-    $('macVal').textContent = whole && on ? 'On' : 'Off';
     $('macVal').className = 'val' + (whole && on ? ' yes' : '');
-    $('macBtn').hidden = !on || whole;
-    $('macWhy').textContent = whole && on ? 'An administrator approved it: ads are blocked for every app' : 'Needs an administrator of this Mac to approve it';
+    $('macBtn').hidden = !on || whole || s.managed;
+    $('macWhy').textContent = whole && on ? 'An administrator approved it: ads are blocked for every app'
+      : s.managed ? 'Your school manages this Mac, so shoo leaves its settings alone' : 'Needs an administrator of this Mac to approve it';
+    $('macVal').textContent = whole && on ? 'On' : s.managed ? 'Not here' : 'Off';
 
     var list = $('allowed');
     list.textContent = '';

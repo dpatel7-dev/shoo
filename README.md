@@ -57,8 +57,9 @@ The first time:
 ## Safe by design
 
 - **No administrator needed** for the browser way: it only uses settings your own account is allowed to change.
-- **It won't change a Mac that a school or company manages.** If the Mac is enrolled in device management, shoo stops and says so.
-- **It won't go around a filter.** If the Mac already sends web traffic through a filter or proxy (often set up by a school or a parent), shoo won't open your browser around it.
+- **On a Mac a school or company manages, shoo never touches the Mac's settings.** It only works inside your browser, and the school's filters, monitoring and rules stay exactly as they are. Blocking ads in every app stays off there.
+- **It won't go around a filter.** If the Mac already sends web traffic through a filter or proxy (often set up by a school or a parent), or the school controls the browser's network settings, shoo stays out of it.
+- **Secure-connection checks keep working.** If a school checks secure connections, YouTube still goes through that check; if shoo can't verify YouTube, it steps aside.
 - **If shoo isn't running, nothing breaks.** Your browser simply goes straight to every site, with no ad blocking.
 - **The certificate works for YouTube only.** To read YouTube's pages, shoo makes its own certificate on your Mac, limited to youtube.com and youtube-nocookie.com. It can't be used for any other website, even by someone who copied it.
 - **Nothing leaves your Mac.** shoo doesn't collect or send anything. It only downloads the public list of ad addresses ([StevenBlack/hosts](https://github.com/StevenBlack/hosts)) and its own updates.

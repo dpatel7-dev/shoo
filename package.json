@@ -1,6 +1,6 @@
 {
   "name": "shoo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Blocks ads: Google's full-page ads, banners, pop-ups, trackers, and the ads on YouTube. No administrator needed. Bramble the hedgehog keeps them out.",
   "bin": { "shoo": "bin/shoo.js" },
   "scripts": { "test": "node --test" },

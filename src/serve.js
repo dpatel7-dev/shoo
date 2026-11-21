@@ -146,6 +146,17 @@ async function serve({ port: wantPort, quiet = false } = {}) {
   });
   const proxy = new Proxy({ port, certs, local: (req, res) => { local(req, res).catch((e) => send(res, 500, { error: e.message })); }, onAds: (n) => Control.countAds(n) });
 
+  // If the network keeps changing YouTube's certificate in a way shoo can't
+  // check, shoo stops handling YouTube (it goes straight there, ads and all).
+  let trustProblems = [];
+  proxy.onTrustProblem = () => {
+    const now = Date.now();
+    trustProblems = trustProblems.filter((t) => now - t < 60000).concat(now);
+    if (trustProblems.length >= 2 && proxy.youtubeOn) {
+      Control.setYoutube(false, 'This network checks secure connections in a way shoo can\'t, so shoo is leaving YouTube alone. YouTube still works, with its ads.');
+      refresh();
+    }
+  };
   let cur = { on: false, allowSet: new Set() };
   function refresh() {
     const s = Control.load();
