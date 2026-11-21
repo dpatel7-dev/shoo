@@ -194,6 +194,74 @@ function untrustAsUser(caFile, sha1) {
   if (sha1) run(BIN.security, ['delete-certificate', '-Z', sha1, loginKeychain()]);
 }
 
+// ── apps in your Applications folder (no administrator needed) ────────────────
+
+function appsDir() {
+  return path.join(os.homedir(), 'Applications');
+}
+
+function infoPlist({ name, id, exec, version }) {
+  const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>${x(name)}</string>
+  <key>CFBundleDisplayName</key><string>${x(name)}</string>
+  <key>CFBundleIdentifier</key><string>${x(id)}</string>
+  <key>CFBundleExecutable</key><string>${x(exec)}</string>
+  <key>CFBundleIconFile</key><string>icon</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${x(version)}</string>
+  <key>CFBundleVersion</key><string>${x(version)}</string>
+  <key>LSMinimumSystemVersion</key><string>10.15</string>
+  <key>LSUIElement</key><true/>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+`;
+}
+
+/**
+ * A small app in ~/Applications that runs a shoo command, so it shows up in
+ * Spotlight and Launchpad and can sit in the Dock.
+ */
+function makeApp({ name, id, args, icon, node, script, version }) {
+  const app = path.join(appsDir(), `${name}.app`);
+  const contents = path.join(app, 'Contents');
+  fs.mkdirSync(path.join(contents, 'MacOS'), { recursive: true });
+  fs.mkdirSync(path.join(contents, 'Resources'), { recursive: true });
+  fs.writeFileSync(path.join(contents, 'Info.plist'), infoPlist({ name, id, exec: 'run', version }));
+  const quote = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  fs.writeFileSync(path.join(contents, 'MacOS', 'run'), `#!/bin/sh\n# ${name}: made by shoo. Remove it with: shoo uninstall\nexec ${quote(node)} ${quote(script)} ${args.map(quote).join(' ')} >> "$HOME/.shoo/app.log" 2>&1\n`, { mode: 0o755 });
+  if (icon && fs.existsSync(icon)) fs.copyFileSync(icon, path.join(contents, 'Resources', 'icon.icns'));
+  // tell macOS about it, so Spotlight and Launchpad find it straight away
+  run('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', app]);
+  return app;
+}
+
+/** A small macOS question box (for the apps, which have no Terminal). Resolves to the button picked. */
+function dialog(message, buttons, title = 'shoo') {
+  const lines = [
+    'on run argv',
+    'set btns to {}',
+    'repeat with i from 3 to count of argv',
+    'set end of btns to item i of argv',
+    'end repeat',
+    'display dialog (item 1 of argv) with title (item 2 of argv) buttons btns default button (count of btns)',
+    'return button returned of result',
+    'end run',
+  ];
+  const args = [];
+  for (const l of lines) args.push('-e', l);
+  const r = run(BIN.osascript, [...args, message, title, ...buttons], 600000);
+  return r.ok ? r.out : '';
+}
+
+function removeApp(name) {
+  fs.rmSync(path.join(appsDir(), `${name}.app`), { recursive: true, force: true });
+}
+
 function flushDns() {
   run(BIN.dscacheutil, ['-flushcache']);
 }
@@ -246,6 +314,6 @@ function stopAgent() {
 }
 
 module.exports = {
-  checkMac, isTrusted, pacSet, adminScript, asAdmin, flushDns, trustWorks, trustAsUser, untrustAsUser, startAgent, restartAgent, stopAgent, plist, plistPath,
+  checkMac, isTrusted, pacSet, adminScript, asAdmin, flushDns, trustWorks, trustAsUser, untrustAsUser, makeApp, removeApp, appsDir, infoPlist, dialog, startAgent, restartAgent, stopAgent, plist, plistPath,
   parseServices, parseEnrollment, parseScutil, foreignProxy, parseOnOff, parseUrl, LABEL,
 };

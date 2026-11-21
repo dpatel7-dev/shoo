@@ -20,13 +20,13 @@
 
   <p class="today" id="today">Looking…</p>
 
-  <div class="note" id="busy" hidden><span class="spinner" aria-hidden="true"></span><span>Waiting for an administrator to type their password in the macOS box…</span></div>
+  <div class="note" id="busy" hidden><span class="spinner" aria-hidden="true"></span><span id="busyText">Working…</span></div>
   <p class="note bad" id="error" role="alert" hidden></p>
 
   <section class="parts" aria-label="What shoo blocks">
     <div class="part web">
       <span class="mark" aria-hidden="true"></span>
-      <div><b>Websites and apps</b><small>Ads, Google's full-page ads, pop-ups, trackers</small></div>
+      <div><b>Websites</b><small id="webWhy">Ads, Google's full-page ads, pop-ups, trackers</small></div>
       <span class="val" id="webVal">–</span>
     </div>
     <div class="part yt">
@@ -35,10 +35,17 @@
       <button type="button" class="small" id="ytBtn" hidden></button>
       <span class="val" id="ytVal">–</span>
     </div>
-    <div class="part login">
+    <div class="part browser" id="browserRow" hidden>
       <span class="mark" aria-hidden="true"></span>
-      <div><b>Starts when you log in</b><small>A small helper in the background</small></div>
-      <span class="val" id="loginVal">–</span>
+      <div><b id="browserName">Chrome with shoo</b><small id="browserWhy"></small></div>
+      <button type="button" class="small" id="browserBtn"></button>
+      <span class="val" id="browserVal">–</span>
+    </div>
+    <div class="part mac">
+      <span class="mark" aria-hidden="true"></span>
+      <div><b>Every app and Safari</b><small id="macWhy">Needs an administrator of this Mac to approve it</small></div>
+      <button type="button" class="small" id="macBtn" hidden>Ask an administrator</button>
+      <span class="val" id="macVal">–</span>
     </div>
   </section>
 

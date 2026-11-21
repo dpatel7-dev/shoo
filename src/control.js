@@ -8,6 +8,7 @@ const path = require('path');
 const Hosts = require('./hosts');
 const Mac = require('./mac');
 const CA = require('./ca');
+const Browsers = require('./browsers');
 
 const APP = path.join(__dirname, '..');
 const VERSION = require('../package.json').version;
@@ -15,7 +16,9 @@ const home = () => process.env.SHOO_HOME || path.join(os.homedir(), '.shoo');
 const file = (name) => path.join(home(), name);
 const HOSTS = process.env.SHOO_HOSTS_FILE || '/etc/hosts';
 
-const DEFAULTS = { on: false, youtube: true, port: 8689, allow: [], listCount: 0, listUpdated: null, note: '' };
+// mode: 'browser' (no administrator: Chrome, Edge or Brave opened through shoo)
+//    or 'mac' (an administrator approved it: every app on the Mac)
+const DEFAULTS = { on: false, mode: 'browser', youtube: true, port: 8689, allow: [], listCount: 0, listUpdated: null, note: '', browser: '' };
 
 function load() {
   try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file('state.json'), 'utf8')) }; } catch { return { ...DEFAULTS }; }
@@ -28,21 +31,27 @@ function save(state) {
 }
 
 const pacUrl = (state) => `http://127.0.0.1:${state.port}/proxy.pac`;
+const browserPacUrl = (state) => `http://127.0.0.1:${state.port}/browser.pac`;
 
-// ── today's count of YouTube ads taken out ────────────────────────────────────
+// ── counting: YouTube ads taken out, and website ads stopped (in the browser) ──
 
 function today() { return new Date().toLocaleDateString('en-CA'); }
 
 function readStats() {
-  try { return JSON.parse(fs.readFileSync(file('stats.json'), 'utf8')); } catch { return { days: {}, total: 0 }; }
+  let s;
+  try { s = JSON.parse(fs.readFileSync(file('stats.json'), 'utf8')); } catch { s = { days: {}, total: 0 }; }
+  for (const k of Object.keys(s.days || {})) if (typeof s.days[k] === 'number') s.days[k] = { youtube: s.days[k], web: 0 }; // 1.0 kept one number
+  s.days = s.days || {};
+  return s;
 }
 
 let pending = null;
 let saveTimer = null;
-function countAds(n) {
+function countAds(n, kind = 'youtube') {
   if (!pending) pending = readStats();
   const d = today();
-  pending.days[d] = (pending.days[d] || 0) + n;
+  const day = pending.days[d] || (pending.days[d] = { youtube: 0, web: 0 });
+  day[kind] = (day[kind] || 0) + n;
   pending.total = (pending.total || 0) + n;
   // keep a month of days
   const keys = Object.keys(pending.days).sort();
@@ -56,7 +65,8 @@ function countAds(n) {
 
 function stats() {
   const s = pending || readStats();
-  return { today: s.days[today()] || 0, total: s.total || 0 };
+  const d = s.days[today()] || { youtube: 0, web: 0 };
+  return { today: d.youtube || 0, web: d.web || 0, total: s.total || 0 };
 }
 
 // ── the block list ─────────────────────────────────────────────────────────────
@@ -90,10 +100,15 @@ function blockedCount() {
 function status() {
   const state = load();
   const authority = fs.existsSync(file('youtube-only-ca.pem')) ? CA.loadAuthority(home()) : null;
+  const browsers = process.platform === 'darwin' ? Browsers.installed() : [];
+  const chosen = Browsers.find(state.browser) || browsers[0] || null;
   return {
     version: VERSION,
     on: state.on,
-    blocked: blockedCount(),
+    mode: state.mode,
+    blocked: state.mode === 'mac' ? blockedCount() : state.on ? state.listCount : 0,
+    browser: chosen ? { id: chosen.id, name: chosen.short, state: process.platform === 'darwin' ? Browsers.state(chosen, browserPacUrl(state)) : 'off' } : null,
+    browsers: browsers.map((b) => ({ id: b.id, name: b.short })),
     youtube: state.on && state.youtube,
     youtubeWhy: state.note,
     allow: state.allow,
@@ -125,11 +140,87 @@ function preflight(state) {
   return checks;
 }
 
+/** Is the YouTube-only certificate trusted by macOS right now? */
+function trusted(authority) {
+  const leaf = file('check-leaf.pem');
+  fs.writeFileSync(leaf, CA.issuer(authority).certFor('www.youtube.com').split('-----END CERTIFICATE-----')[0] + '-----END CERTIFICATE-----\n');
+  return Mac.trustWorks(leaf, authority.file);
+}
+
+/** The little apps in ~/Applications: shoo (opens the dashboard) and "<browser> with shoo". */
+function makeApps() {
+  const node = process.execPath;
+  const script = path.join(APP, 'bin', 'shoo.js');
+  const made = [Mac.makeApp({ name: 'shoo', id: 'dev.dpatel7.shoo.app', args: ['app'], icon: path.join(APP, 'assets', 'shoo.icns'), node, script, version: VERSION })];
+  for (const b of Browsers.installed()) {
+    made.push(Mac.makeApp({ name: `${b.short} with shoo`, id: `dev.dpatel7.shoo.${b.id}`, args: ['browser', b.id], icon: path.join(APP, 'assets', 'browser.icns'), node, script, version: VERSION }));
+  }
+  return made;
+}
+
+function removeApps() {
+  Mac.removeApp('shoo');
+  for (const b of Browsers.LIST) Mac.removeApp(`${b.short} with shoo`);
+}
+
 /**
- * Turn shoo on: block the ad addresses, and (if allowed) take the ads out of YouTube.
- * `say` gets progress lines.
+ * Turn shoo on. mode 'browser' needs no administrator: it blocks ads in Chrome
+ * (or Edge, or Brave) opened through shoo. mode 'mac' blocks them for every app,
+ * and an administrator has to approve it. `say` gets progress lines.
  */
-async function turnOn({ youtube = true, say = () => {} } = {}) {
+async function turnOn({ mode = 'browser', youtube = true, say = () => {} } = {}) {
+  return mode === 'mac' ? turnOnMac({ youtube, say }) : turnOnBrowser({ youtube, say });
+}
+
+async function turnOnBrowser({ youtube = true, say = () => {} } = {}) {
+  const state = load();
+  const checks = preflight(state);
+  if (checks.proxy) {
+    throw new Error(`This Mac sends web traffic through a filter or proxy (${checks.proxyWhere.join(', ')}), often set up by a school or a parent. Opening your browser through shoo would go around it, so shoo won't.`);
+  }
+  if (!Browsers.installed().length) throw new Error('shoo works with Google Chrome, Microsoft Edge or Brave, and none of them is in your Applications folder.');
+  state.note = '';
+  say('Getting the list of ad and tracker addresses...');
+  const list = await getList(!state.listUpdated || Date.now() - Date.parse(state.listUpdated) > 7 * 864e5);
+  if (list.problem) say(list.problem);
+  const domains = Hosts.blocklist(list.set, []);
+
+  const authority = CA.loadAuthority(home());
+  Mac.startAgent(process.execPath, path.join(APP, 'bin', 'shoo.js'), file('shoo.log'));
+
+  let youtubeOk = youtube;
+  if (youtubeOk && !trusted(authority)) {
+    say('macOS will ask for your own Mac password (not an administrator\'s) to trust shoo\'s YouTube-only certificate.');
+    state.userTrust = Mac.trustAsUser(authority.file) || state.userTrust;
+    if (!trusted(authority)) {
+      youtubeOk = false;
+      state.note = 'macOS didn\'t trust shoo\'s YouTube-only certificate, so YouTube ads aren\'t being blocked. Turn shoo off and on again to try once more.';
+      say(state.note);
+    }
+  }
+  makeApps();
+
+  state.on = true;
+  if (state.mode !== 'mac') state.mode = 'browser';
+  state.youtube = youtubeOk;
+  state.youtubePaused = false;
+  state.listCount = domains.length;
+  if (!state.browser || !Browsers.find(state.browser)) state.browser = Browsers.installed()[0].id;
+  if (list.fresh) state.listUpdated = new Date().toISOString();
+  save(state);
+  return { blocked: domains.length, youtube: youtubeOk, note: state.note, browser: Browsers.find(state.browser) };
+}
+
+/** Open the browser with shoo (restart: close and reopen it if it's open without shoo). */
+async function openBrowser({ id, restart = false, url = '', asApp = false } = {}) {
+  const state = load();
+  const b = Browsers.find(id || state.browser) || Browsers.installed()[0];
+  if (!b) throw new Error('shoo works with Google Chrome, Microsoft Edge or Brave, and none of them is installed.');
+  if (id && state.browser !== b.id) { state.browser = b.id; save(state); }
+  return { browser: b, result: await Browsers.open(b, browserPacUrl(state), { restart, url, asApp }) };
+}
+
+async function turnOnMac({ youtube = true, say = () => {} } = {}) {
   const state = load();
   const checks = preflight(state);
   let youtubeOk = youtube;
@@ -167,11 +258,7 @@ async function turnOn({ youtube = true, say = () => {} } = {}) {
   // Check that macOS really trusts the YouTube-only certificate. If it doesn't, YouTube
   // simply goes straight to the internet (shoo serves a "DIRECT" PAC file), so nothing breaks.
   if (youtubeOk) {
-    const works = () => {
-      const leaf = file('check-leaf.pem');
-      fs.writeFileSync(leaf, CA.issuer(authority).certFor('www.youtube.com').split('-----END CERTIFICATE-----')[0] + '-----END CERTIFICATE-----\n');
-      return Mac.trustWorks(leaf, authority.file);
-    };
+    const works = () => trusted(authority);
     if (!works()) {
       say('macOS will ask for your password to trust shoo\'s YouTube-only certificate.');
       state.userTrust = Mac.trustAsUser(authority.file);
@@ -183,18 +270,30 @@ async function turnOn({ youtube = true, say = () => {} } = {}) {
     }
   }
 
+  makeApps();
   state.on = true;
+  state.mode = 'mac';
   state.youtube = youtubeOk;
+  state.youtubePaused = false;
   state.listCount = domains.length;
   if (list.fresh) state.listUpdated = new Date().toISOString();
   save(state);
   return { blocked: domains.length, youtube: youtubeOk, note: state.note };
 }
 
-/** Turn shoo off: put the hosts file and network settings back. */
+/**
+ * Turn shoo off. In browser mode that's just a switch (the browser's PAC file
+ * says "go straight there" from now on). In whole-Mac mode an administrator
+ * puts the hosts file and network settings back.
+ */
 async function turnOff() {
   const state = load();
   if (process.platform !== 'darwin') throw new Error('shoo works on macOS for now.');
+  if (state.mode !== 'mac') {
+    state.on = false;
+    save(state);
+    return;
+  }
   const services = Mac.parseServices(require('child_process').spawnSync('/usr/sbin/networksetup', ['-listallnetworkservices'], { encoding: 'utf8' }).stdout || '');
   const ours = services.filter((s) => {
     const t = require('child_process').spawnSync('/usr/sbin/networksetup', ['-getautoproxyurl', s], { encoding: 'utf8' }).stdout || '';
@@ -212,15 +311,29 @@ async function turnOff() {
   }));
   const r = Mac.asAdmin(script, 'shoo wants to stop blocking ads and put this Mac\'s settings back. An administrator needs to approve it.');
   if (!r.ok) throw new Error(r.message);
-  if (authority && state.userTrust) Mac.untrustAsUser(authority.file, authority.fingerprint);
   state.on = false;
+  state.mode = 'browser';
   save(state);
+}
+
+/** Remove the certificate trust you gave (macOS asks for your password). */
+function forgetTrust() {
+  const state = load();
+  const authority = fs.existsSync(file('youtube-only-ca.pem')) ? CA.loadAuthority(home()) : null;
+  if (authority && state.userTrust) Mac.untrustAsUser(authority.file, authority.fingerprint);
 }
 
 /** Rewrite just the blocked addresses (after a new list or a change to the sites you let through). */
 async function rewriteHosts({ fresh = false } = {}) {
   const state = load();
-  if (!state.on) { save(state); return { blocked: 0 }; }
+  if (!state.on || state.mode !== 'mac') {
+    // the browser way: shoo's blocker reads the list itself, no password needed
+    const list = await getList(fresh);
+    state.listCount = Hosts.blocklist(list.set, []).length;
+    if (list.fresh) state.listUpdated = new Date().toISOString();
+    save(state);
+    return { blocked: state.listCount, problem: list.problem };
+  }
   preflight(state);
   const list = await getList(fresh);
   const domains = Hosts.blocklist(list.set, state.allow);
@@ -263,4 +376,4 @@ function setYoutube(on) {
   return state;
 }
 
-module.exports = { load, save, status, turnOn, turnOff, rewriteHosts, allow, block, setYoutube, countAds, stats, getList, pacUrl, home, file, VERSION, APP };
+module.exports = { load, save, status, turnOn, turnOff, rewriteHosts, allow, block, setYoutube, countAds, stats, getList, openBrowser, makeApps, removeApps, forgetTrust, pacUrl, browserPacUrl, home, file, VERSION, APP };

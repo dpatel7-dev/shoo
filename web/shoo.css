@@ -86,7 +86,8 @@ h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.03em; colo
 .mark { width: 10px; height: 10px; border-radius: 3px; }
 .web .mark { background: var(--moss); }
 .yt .mark { background: var(--berry); }
-.login .mark { background: var(--slate); }
+.browser .mark { background: var(--spine); }
+.mac .mark { background: var(--slate); }
 .val { font-weight: 600; font-size: 14px; color: var(--muted); }
 .val.yes { color: var(--on); }
 

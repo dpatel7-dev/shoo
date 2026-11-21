@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+- **No administrator needed.** shoo now blocks ads in Chrome, Edge or Brave opened through shoo: website ads, Google's full-page ads, trackers and YouTube's ads. The first time, macOS may ask for your own Mac password (to trust the YouTube-only certificate). Blocking ads in every app and Safari is still there, for when an administrator approves it.
+- New apps in your Applications folder: **shoo** opens the dashboard (find it with Spotlight or Launchpad), and **Chrome with shoo** (or Edge, or Brave) opens your browser with ad blocking. Keep it in your Dock.
+- If Chrome is already open without shoo, shoo offers to close it and open it again with your tabs.
+- The dashboard counts the website ads and trackers stopped today, too.
+- A new scene behind the dashboard: Bramble's hedgerow, a bramble hedge with blackberries by a meadow, with bees, dandelion seeds in the wind, and fireflies and moths at night.
+
 ## 1.0.0
 - First version: blocks ads on your whole Mac. Google's full-page ads, banners, pop-ups and trackers are blocked for every browser and app, and YouTube's video, feed, search and Shorts ads are taken out of its pages.
 - Bramble the hedgehog lives in a pixel forest behind shoo's window: day in light mode, night in dark mode.

@@ -15,6 +15,7 @@ const https = require('https');
 const tls = require('tls');
 const zlib = require('zlib');
 const fs = require('fs');
+const net = require('net');
 const { pruneJson, pruneHtml } = require('./prune');
 
 // The only addresses shoo looks at. Sign-in (accounts.youtube.com) and Studio go straight through.
@@ -64,6 +65,94 @@ function decode(body, encoding) {
     case 'deflate': try { return zlib.inflateSync(body); } catch { return zlib.inflateRawSync(body); }
     case 'br': return zlib.brotliDecompressSync(body);
     default: return null; // something we can't read: pass it on untouched
+  }
+}
+
+/**
+ * The PAC file for a browser opened through shoo (no administrator needed).
+ * Ad and tracker addresses go to shoo's blocker, YouTube goes through shoo to
+ * have its ads taken out, everything else goes straight to the internet.
+ */
+function browserPac(port, blockPort, youtubeOn, filter) {
+  const Bloom = require('./bloom');
+  const yt = [...YOUTUBE].map((h) => `${JSON.stringify(h)}: 1`).join(', ');
+  return [
+    '// shoo, for your browser: ads and trackers go nowhere, YouTube goes through shoo',
+    '// (to take its ads out), and everything else goes straight to the internet.',
+    '// If shoo is not running, everything goes straight there ("DIRECT").',
+    Bloom.pacSource(filter),
+    `var Y = { ${yt} };`,
+    'function FindProxyForURL(url, host) {',
+    '  host = host.toLowerCase();',
+    youtubeOn ? `  if (Y[host] === 1) return "PROXY 127.0.0.1:${port}; DIRECT";` : '',
+    '  var h = host;',
+    `  for (var n = 0; n < 8; n++) { if (listed(h)) return "PROXY 127.0.0.1:${blockPort}; DIRECT"; var i = h.indexOf("."); if (i < 0 || h.indexOf(".", i + 1) < 0) break; h = h.substring(i + 1); }`,
+    '  return "DIRECT";',
+    '}',
+    '',
+  ].filter((l) => l !== '').join('\n') + '\n';
+}
+
+/**
+ * The blocker: where the browser sends ad and tracker addresses. It checks the
+ * real list (the PAC file's quick check is rarely wrong) and the sites you've
+ * let through; those, and the rare mistake, go straight through untouched.
+ */
+class Blocker {
+  constructor({ port, isBlocked, onBlocked }) {
+    this.port = port;
+    this.isBlocked = isBlocked;
+    this.onBlocked = onBlocked || (() => {});
+    this.server = http.createServer((req, res) => this.onRequest(req, res));
+    this.server.on('connect', (req, socket, head) => this.onConnect(req, socket, head));
+    this.server.on('clientError', (err, socket) => socket.destroy());
+  }
+
+  listen() {
+    return new Promise((resolve, reject) => {
+      this.server.once('error', reject);
+      this.server.listen(this.port, '127.0.0.1', () => { this.server.off('error', reject); resolve(this); });
+    });
+  }
+
+  close() { return new Promise((r) => this.server.close(() => r())); }
+
+  onConnect(req, socket, head) {
+    socket.on('error', () => {});
+    const m = /^\[?([^\]]+?)\]?:(\d+)$/.exec(req.url || '');
+    if (!m) return socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    const host = m[1].toLowerCase();
+    if (this.isBlocked(host)) {
+      this.onBlocked(host);
+      return socket.end('HTTP/1.1 403 Forbidden\r\ncontent-type: text/plain\r\n\r\nshoo blocked an ad or tracker.\n');
+    }
+    // not really an ad (or you let it through): connect it straight through
+    const up = net.connect(Number(m[2]), host, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head && head.length) up.write(head);
+      up.pipe(socket).pipe(up);
+    });
+    up.on('error', () => socket.destroy());
+    socket.on('close', () => up.destroy());
+  }
+
+  onRequest(req, res) {
+    let u;
+    try { u = new URL(req.url); } catch { res.writeHead(400); return res.end(); }
+    const host = u.hostname.toLowerCase();
+    if (this.isBlocked(host)) {
+      this.onBlocked(host);
+      res.writeHead(403, { 'content-type': 'text/plain' });
+      return res.end('shoo blocked an ad or tracker.\n');
+    }
+    const headers = {};
+    for (let i = 0; i < req.rawHeaders.length; i += 2) if (!HOP.has(req.rawHeaders[i].toLowerCase())) headers[req.rawHeaders[i]] = req.rawHeaders[i + 1];
+    const up = http.request({ host, port: u.port || 80, method: req.method, path: u.pathname + u.search, headers }, (ur) => {
+      res.writeHead(ur.statusCode, ur.statusMessage, cleanHeaders(ur.rawHeaders));
+      ur.pipe(res);
+    });
+    up.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    req.pipe(up);
   }
 }
 
@@ -238,4 +327,4 @@ class Proxy {
   }
 }
 
-module.exports = { Proxy, pac, kindOf, YOUTUBE, decode };
+module.exports = { Proxy, Blocker, pac, browserPac, kindOf, YOUTUBE, decode };

@@ -6,13 +6,51 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { Proxy } = require('./proxy');
+const { Proxy, Blocker, browserPac } = require('./proxy');
+const Hosts = require('./hosts');
+const Bloom = require('./bloom');
 const CA = require('./ca');
 const Control = require('./control');
 
 const WEB = path.join(__dirname, '..', 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const FILES = new Set(['shoo.css', 'shoo.js', 'forest.js', 'sprites.js', 'favicon.svg']);
+
+/** The block list as the blocker uses it, rebuilt when the saved list changes. */
+function listKeeper() {
+  let mtime = -1;
+  let set = new Set();
+  let filter = null;
+  const load = () => {
+    let m = 0;
+    try { m = fs.statSync(Control.file('blocklist.txt')).mtimeMs; } catch { /* only the built-in list */ }
+    if (m === mtime) return;
+    mtime = m;
+    let saved = [];
+    try { saved = fs.readFileSync(Control.file('blocklist.txt'), 'utf8').split('\n').filter(Boolean); } catch { /* none yet */ }
+    set = new Set(Hosts.blocklist(new Set(saved), []));
+    filter = Bloom.build(set);
+  };
+  return {
+    refresh: load,
+    get filter() { load(); return filter; },
+    /** Blocked: on the list (or under a listed name), not let through, and not one shoo must never block. */
+    isBlocked(host, allow) {
+      load();
+      let h = host.replace(/\.$/, '');
+      for (let n = 0; n < 8 && h.includes('.'); n++) {
+        if (allow.has(h) || Hosts.NEVER.has(h)) return false;
+        if (set.has(h)) {
+          // let it through if you allowed a parent of it
+          for (let p = host; p.includes('.'); p = p.slice(p.indexOf('.') + 1)) if (allow.has(p)) return false;
+          return true;
+        }
+        h = h.slice(h.indexOf('.') + 1);
+      }
+      return false;
+    },
+  };
+}
 
 function send(res, code, body, type = 'application/json; charset=utf-8', extra = {}) {
   res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...extra });
@@ -46,6 +84,11 @@ async function serve({ port: wantPort, quiet = false } = {}) {
     const p = url.pathname;
     if (p === '/version') return send(res, 200, `${Control.VERSION}\n`, 'text/plain');
 
+    if (p === '/browser.pac') {
+      const s = Control.load();
+      const text = s.on ? browserPac(port, port + 1, proxy.youtubeOn, lists.filter) : 'function FindProxyForURL(url, host) { return "DIRECT"; }\n';
+      return send(res, 200, text, 'application/x-ns-proxy-autoconfig');
+    }
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
       const page = fs.readFileSync(path.join(WEB, 'shoo.html'), 'utf8')
         .replace('__CONFIG__', () => JSON.stringify({ token, port }).replace(/</g, '\\u003c'));
@@ -74,7 +117,9 @@ async function serve({ port: wantPort, quiet = false } = {}) {
       busy = act;
       try {
         let result = {};
-        if (act === 'on') result = await Control.turnOn({ youtube: true });
+        if (act === 'on') result = await Control.turnOn({ mode: 'browser', youtube: true });
+        else if (act === 'whole-mac') result = await Control.turnOn({ mode: 'mac', youtube: true });
+        else if (act === 'browser') result = await Control.openBrowser({ id: body.id, restart: !!body.restart });
         else if (act === 'off') await Control.turnOff();
         else if (act === 'list') result = await Control.rewriteHosts({ fresh: true });
         else if (act === 'allow') result = { site: await Control.allow(String(body.site || '')) };
@@ -93,18 +138,28 @@ async function serve({ port: wantPort, quiet = false } = {}) {
     return send(res, 404, { error: 'Not found.' });
   }
 
+  const lists = listKeeper();
+  const blocker = new Blocker({
+    port: port + 1,
+    isBlocked: (host) => cur.on && lists.isBlocked(host, cur.allowSet),
+    onBlocked: () => Control.countAds(1, 'web'),
+  });
   const proxy = new Proxy({ port, certs, local: (req, res) => { local(req, res).catch((e) => send(res, 500, { error: e.message })); }, onAds: (n) => Control.countAds(n) });
 
+  let cur = { on: false, allowSet: new Set() };
   function refresh() {
     const s = Control.load();
+    cur = { on: s.on, allowSet: new Set(s.allow) };
     proxy.youtubeOn = s.on && s.youtube && !s.youtubePaused;
+    lists.refresh();
   }
   refresh();
   setInterval(refresh, 3000).unref();
 
   await proxy.listen();
+  await blocker.listen().catch((e) => console.error(`shoo's blocker couldn't start on port ${port + 1}: ${e.message}`));
   if (!quiet) console.log(`shoo ${Control.VERSION} is listening on http://127.0.0.1:${port} (YouTube ${proxy.youtubeOn ? 'on' : 'off'})`);
-  const stop = () => proxy.close().then(() => process.exit(0));
+  const stop = () => Promise.all([proxy.close(), blocker.close().catch(() => {})]).then(() => process.exit(0));
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
   return proxy;
