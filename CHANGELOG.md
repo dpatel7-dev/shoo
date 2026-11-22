@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.0
+- **Light or dark, set once for every app:** press **L** in pca (or `pca look light`, `pca look dark`, `pca look auto`). shoo's window follows it.
+
 ## 1.2.0
 - **Works on a Mac a school manages.** shoo's browser way changes nothing on the Mac, so it now runs there too: it blocks ads and YouTube's ads in Chrome opened through shoo, and the school's settings, filters and rules stay exactly as they are. Blocking ads in every app stays off on a managed Mac.
 - If the school controls a browser's network settings, shoo leaves that browser alone.

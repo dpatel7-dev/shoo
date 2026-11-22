@@ -13,6 +13,7 @@ const CA = require('./ca');
 const Control = require('./control');
 
 const WEB = path.join(__dirname, '..', 'web');
+const Look = require('./look');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const FILES = new Set(['shoo.css', 'shoo.js', 'forest.js', 'sprites.js', 'favicon.svg']);
 
@@ -89,8 +90,11 @@ async function serve({ port: wantPort, quiet = false } = {}) {
       const text = s.on ? browserPac(port, port + 1, proxy.youtubeOn, lists.filter) : 'function FindProxyForURL(url, host) { return "DIRECT"; }\n';
       return send(res, 200, text, 'application/x-ns-proxy-autoconfig');
     }
+    // light or dark for every app, set in pca (a file, because this page only runs script files)
+    if (req.method === 'GET' && p === '/look.js') return send(res, 200, Look.body(Look.read(), '/__look'), TYPES['.js']);
+    if (req.method === 'GET' && p === '/__look') return send(res, 200, JSON.stringify({ look: Look.read() }), 'application/json');
     if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
-      const page = fs.readFileSync(path.join(WEB, 'shoo.html'), 'utf8')
+      const page = Look.inject(fs.readFileSync(path.join(WEB, 'shoo.html'), 'utf8'), Look.read(), '', '/look.js')
         .replace('__CONFIG__', () => JSON.stringify({ token, port }).replace(/</g, '\\u003c'));
       return send(res, 200, page, TYPES['.html'], {
         'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
